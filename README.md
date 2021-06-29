@@ -8,7 +8,7 @@ The key features are:
 
 - FromOS, a function to inherit the current state.
 - The usual Get/Set/Unset functions.
-- Keep/Drop functions that work
+- Keep/Drop functions that work on lists of variables/prefix globs.
 - Concurrent safety.
 - Functions for reading the set in different forms. (slice, map)
 - Functions over the set of values (Len())
