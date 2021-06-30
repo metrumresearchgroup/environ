@@ -27,7 +27,7 @@ env := environ.FromOS()
 env.Keep("PATH", "SHELL", "GITHUB_*", "SSH_*")
 
 // Drop specific keys that might confound a process.
-env.Drop("GITHUB_SHA")
+env.Drop("GITHUB_SHA", "TOOL_*")
 
 // using our command package 
 out, err := command.New(command.WithEnv(env.AsSlice())).
