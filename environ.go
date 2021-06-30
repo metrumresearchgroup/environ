@@ -13,7 +13,7 @@ import (
 
 // An Environ holds a set of environment variables for manipulation.
 type Environ struct {
-	l *sync.RWMutex
+	l locker
 	m map[string]string
 }
 
@@ -281,6 +281,14 @@ func envMapAsSlice(m map[string]string) []string {
 	sort.Strings(s)
 
 	return s
+}
+
+type locker interface {
+	RLock()
+	RUnlock()
+
+	Lock()
+	Unlock()
 }
 
 func (e *Environ) readLocker() (unlocker func()) {
