@@ -4,6 +4,8 @@ import (
 	"testing"
 )
 
+// TestLocks checks for locking functions missing the second ()
+// in their defer call.
 func TestLocks(t *testing.T) {
 	a := New([]string{"A=A"})
 	fl := fakeLocker{}

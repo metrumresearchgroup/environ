@@ -11,7 +11,10 @@ steps:
     commands:
       - go mod tidy
       - go mod download
-      - go test -v ./...
+      # TestLocks, should it fail, would cause other tests to hang
+      # if the lock that fails is a write lock.
+      - go test -v -test.run ^TestLocks$ .
+      - go test -v .
 
   - name: lint
     image: golang:1.16
