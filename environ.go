@@ -6,6 +6,7 @@ package environ
 import (
 	"encoding/json"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -78,133 +79,124 @@ func (e *Environ) Get(key string) string {
 	return e.m[key]
 }
 
-// Keep scans the Environ looking for keys matching the keepers slice and
-// keeps them while discarding all others.
+// Keep scans the Environ looking for matching patterns and
+// keeps them while dropping all others.
 //
-// It returns the slice of keys it could not find, because this may be a
-// condition for failure in some situations. If a key in the keepers list
-// has the suffix "*", it will use wild-card logic to capture columns.
-func (e *Environ) Keep(keepers ...string) []string {
+// It returns the slice of patterns it could not find.
+//
+// All patterns are treated as a regular expression, which will error on
+// compile failures.
+func (e *Environ) Keep(patterns ...string) (missing []string, err error) {
 	m := e.AsMap()
-	missing := keep(&m, keepers)
+	missing, err = keep(&m, patterns)
+	if err != nil {
+		return missing, err
+	}
 
 	defer e.writeLocker()()
 
 	e.m = m
 
-	return missing
+	return missing, nil
 }
 
-func keep(m *map[string]string, keepers []string) (missing []string) {
-	missing = make([]string, 0, len(keepers))
-	keeping := make(map[string]string, len(keepers))
+func keep(m *map[string]string, patterns []string) (missing []string, err error) {
+	matched, missing, err := matchingKeys(*m, patterns)
+	if err != nil {
+		return missing, err
+	}
 
-	for _, keeperKey := range keepers {
-		var found bool
-
-		// Matching on wildcards
-		if strings.HasSuffix(keeperKey, "*") {
-			var streak bool
-			kprefix := strings.TrimSuffix(keeperKey, "*")
-			for _, mKey := range keys(*m) {
-				if strings.HasPrefix(mKey, kprefix) {
-					keeping[mKey] = (*m)[mKey]
-					// start the streak, since our keys are ordered, we
-					// can exit the loop once the streak ends.
-					streak = true
-					// we don't break in this case, as we may
-					// have multiple matches.
-				} else if streak {
-					// if we didn't find another in the streak,
-					// we can exit the inner loop.
-					found = true
-
-					break
-				}
-			}
-		} else {
-			for _, mKey := range keys(*m) {
-				if keeperKey == mKey {
-					keeping[mKey] = (*m)[mKey]
-					found = true
-
-					break
-				}
-			}
-		}
-
-		if !found {
-			missing = append(missing, keeperKey)
-		}
+	keeping := make(map[string]string, len(*m))
+	for _, keepKey := range matched {
+		keeping[keepKey] = (*m)[keepKey]
 	}
 
 	*m = keeping
 
-	sort.Strings(missing)
-
-	return missing
+	return missing, err
 }
 
-// Drop scans the Environ looking for keys matching the droppers slice and
+// Drop scans the Environ looking for matching patterns and
 // drops them while keeping all others.
 //
-// It returns the slice of keys it could not find.
+// It returns the slice of patterns it could not find.
 //
-// If a key in the droppers list has the suffix "*", it will
-// use wild-card logic to capture columns.
-func (e *Environ) Drop(droppers ...string) (missing []string) {
+// All patterns are treated as a regular expression, which will error on
+// compile failures.
+func (e *Environ) Drop(patterns ...string) (missing []string, err error) {
 	m := e.AsMap()
-	missing = drop(m, droppers)
+	missing, err = drop(m, patterns)
+	if err != nil {
+		return missing, err
+	}
 
 	defer e.writeLocker()()
 
 	e.m = m
 
-	return missing
+	return missing, nil
 }
 
-func drop(m map[string]string, droppers []string) (missing []string) {
-	mm := make(map[string]struct{}, len(droppers))
-	for _, dropKey := range droppers {
-		var found bool
-		if strings.HasSuffix(dropKey, "*") {
-			kprefix := strings.TrimSuffix(dropKey, "*")
-			// hold a streak state to stop when we hit the last matching key in the
-			// map, since the keys are sorted.
-			var streak bool
-			for _, mKey := range keys(m) {
-				if strings.HasPrefix(mKey, kprefix) {
-					delete(m, mKey)
-					streak = true
-					// we don't break in this case, as we may
-					// have multiple matches.
-				} else if streak {
-					found = true
+func drop(m map[string]string, patterns []string) (missing []string, err error) {
+	matched, missing, err := matchingKeys(m, patterns)
+	if err != nil {
+		return missing, err
+	}
 
-					break
-				}
-			}
-		} else {
-			if _, ok := m[dropKey]; ok {
-				delete(m, dropKey)
+	for _, dropKey := range matched {
+		delete(m, dropKey)
+	}
+
+	return missing, nil
+}
+
+func matchingKeys(m map[string]string, patterns []string) (matched []string, missing []string, err error) {
+	sort.Strings(patterns)
+
+	matched = make([]string, 0, len(m))
+	missing = make([]string, 0, len(patterns))
+
+	regexps := make(map[string]*regexp.Regexp, len(patterns))
+	for _, pattern := range patterns {
+		var regex *regexp.Regexp
+
+		// anchor the pattern to prevent weird regexp edge cases.
+		regex, err = regexp.Compile("^" + pattern + "$")
+		if err != nil {
+			return nil, []string{pattern}, err
+		}
+
+		regexps[pattern] = regex
+	}
+
+	for _, pattern := range patterns {
+		var found bool
+
+		// hold a streak state to stop when we hit the last matching pattern in the
+		// map, since the keys are sorted.
+		var streak bool
+		for _, mKey := range keys(m) {
+			if regexps[pattern].MatchString(mKey) {
+				matched = append(matched, mKey)
+				streak = true
+				// we don't break in this case, as we may
+				// have multiple matches.
+			} else if streak {
 				found = true
+
+				break
 			}
 		}
 
 		if !found {
-			mm[dropKey] = struct{}{}
+			missing = append(missing, pattern)
 		}
 	}
 
-	missing = make([]string, 0, len(missing))
-	for k := range mm {
-		missing = append(missing, k)
-	}
-
-	// Consistently report keys
+	sort.Strings(matched)
 	sort.Strings(missing)
 
-	return missing
+	return matched, missing, err
 }
 
 // Keys returns the map's keys in lexical order.

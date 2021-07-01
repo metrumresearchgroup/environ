@@ -12,7 +12,7 @@ The key features are:
 - Concurrent safety.
 - Functions for reading the set in different forms. (slice, map)
 - Functions over the set of values (Len())
-- Globbing of keys to keep or drop whole collections of values.
+- Regular expression of keys to keep or drop whole collections of values.
 
 ## Use
 
@@ -24,10 +24,10 @@ env := environ.FromOS()
 
 // keep some things you may need, including a wildcard to all
 // github settings.
-env.Keep("PATH", "SHELL", "GITHUB_*", "SSH_*")
+env.Keep("PATH", "SHELL", "GITHUB_.*", "SSH_.*")
 
-// Drop specific keys that might confound a process.
-env.Drop("GITHUB_SHA", "TOOL_*")
+// Drop specific keys that might confound a process or leak secrets.
+env.Drop("GITHUB_SHA", "TOOL_.*", ".*PASSWORD")
 
 // using our command package 
 out, err := command.New(command.WithEnv(env.AsSlice())).

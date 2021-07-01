@@ -76,20 +76,46 @@ func TestSkipNoEquals(t *testing.T) {
 		t.Fatalf("unexpected slice: %v", e.AsSlice())
 	}
 }
+
+func TestCatchBadRegex(t *testing.T) {
+	e := environ.New([]string{"A", "B=B", "C="})
+	missing, err := e.Drop(`unsupported\K`)
+	if err == nil {
+		t.Fatalf("expected an error which did not occur")
+	}
+	if !reflect.DeepEqual(missing, []string{`unsupported\K`}) {
+		t.Fatalf("missing had unexpected result. actual: %v", missing)
+	}
+
+	missing, err = e.Keep(`unsupported\K`)
+	if err == nil {
+		t.Fatalf("expected an error which did not occur")
+	}
+	if !reflect.DeepEqual(missing, []string{`unsupported\K`}) {
+		t.Fatalf("missing had unexpected result. actual: %v", missing)
+	}
+}
+
 func TestKeepDrop(t *testing.T) {
 	env := environ.New([]string{"A=A", "B=B", "C=C", "D=D", "A_A=AA", "A_B=AB"})
 
-	missing := env.Keep("A", "B", "C", "E", "A_*", "B_*")
+	missing, err := env.Keep("A", "B", "C", "E", "A_.*", "B_.*")
+	if err != nil {
+		t.Fatalf("unexpected an error: %v", err)
+	}
 
 	if !reflect.DeepEqual(env.AsSlice(), []string{"A=A", "A_A=AA", "A_B=AB", "B=B", "C=C"}) {
 		t.Fatalf("didn't keep correct values: %v", env.AsSlice())
 	}
 
-	if !reflect.DeepEqual(missing, []string{"B_*", "E"}) {
+	if !reflect.DeepEqual(missing, []string{"B_.*", "E"}) {
 		t.Fatalf("missing is missing a value (either 'B_*' or 'E'): %v", missing)
 	}
 
-	missing = env.Drop("B", "D", "A_*")
+	missing, err = env.Drop("B", "D", "A_.*")
+	if err != nil {
+		t.Fatalf("found unexpected err: %v", err)
+	}
 
 	if !reflect.DeepEqual(env.AsSlice(), []string{"A=A", "C=C"}) {
 		t.Fatalf("didn't drop correct values")
